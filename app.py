@@ -45,7 +45,6 @@ def load_excel(file):
     data = data.drop(0).reset_index(drop=True)
     return data, format_rules
 
-st.title('Excel 格式驗證器')
 
 uploaded_file = st.file_uploader("選擇文件", type=['xlsx'])
 if uploaded_file is not None:
