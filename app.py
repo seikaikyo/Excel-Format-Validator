@@ -1,6 +1,23 @@
 import streamlit as st
 import pandas as pd
 import re
+import streamlit as st
+
+# 允許的字符正則表達式
+allowed_chars_regex = r'^[A-Za-z0-9\s,.;:!-]+$'
+
+st.title('Excel 格式驗證器')
+
+st.write("""
+## 允許的字符
+本應用程式只接受以下字符：
+- 英文字母 (A-Z, a-z)
+- 數字 (0-9)
+- 空格 ( )
+- 基本標點符號 (, . ; : ! -)
+""")
+
+st.write(f"正則表達式為：`{allowed_chars_regex}`")
 
 def validate_data(row, format_rules):
     errors = []
