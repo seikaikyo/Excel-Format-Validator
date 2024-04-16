@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import json
 import os
+import re
 
 config_file = 'config.json'
 
@@ -12,7 +13,16 @@ def save_config(config_data):
 def load_config():
     if os.path.exists(config_file):
         with open(config_file, 'r') as f:
-            return json.load(f)
+            config_data = json.load(f)
+        # 確保所有配置都是字典格式
+        updated_config_data = {}
+        for key, value in config_data.items():
+            if isinstance(value, dict):
+                updated_config_data[key] = value
+            else:
+                # 如果不是字典，初始化為空的設定
+                updated_config_data[key] = {col: {'exclude_chars': [], 'max_length': 255, 'disable_chinese': False} for col in (value if isinstance(value, list) else [])}
+        return updated_config_data
     return {}
 
 def delete_config(config_name):
@@ -26,8 +36,8 @@ def delete_config(config_name):
 st.title('Excel 格式驗證器')
 
 st.write("""
-## 為選定欄位排除特定的特殊字符
-請選擇欄位並指定不應包含的特殊字符。
+## 為選定欄位排除特定的特殊字符及設置字元長度限制
+請選擇欄位並指定不應包含的特殊字符，並設定字元長度限制。
 """)
 
 uploaded_file = st.file_uploader("選擇文件", type=['xlsx'])
@@ -40,8 +50,8 @@ selected_config_name = st.selectbox('選擇或創建新配置', ['創建新配�
 if selected_config_name != '創建新配置' and st.button('刪除此配置'):
     if delete_config(selected_config_name):
         st.success('配置已刪除')
-        configurations.pop(selected_config_name, None)  # 更新配置列表
-        selected_config_name = '創建新配置'  # 重設選項
+        configurations.pop(selected_config_name, None)
+        selected_config_name = '創建新配置'
     else:
         st.error('刪除配置失敗')
 
@@ -57,9 +67,19 @@ if uploaded_file is not None:
 
         for column in all_columns:
             with st.expander(f"設定 '{column}' 欄位"):
-                default_chars = column_char_exclude.get(column, [])
-                char_checks = {char: st.checkbox(f"排除 '{char}'", value=char in default_chars, key=f"{column}_{char}") for char in special_characters}
-                column_char_exclude[column] = [char for char, checked in char_checks.items() if checked]
+                default_chars = column_char_exclude.get(column, {'exclude_chars': [], 'max_length': 255, 'disable_chinese': False})
+                # 這裡加入對default_chars的字典類型檢查
+                if not isinstance(default_chars, dict):
+                    default_chars = {'exclude_chars': [], 'max_length': 255, 'disable_chinese': False}
+                char_checks = {char: st.checkbox(f"排除 '{char}'", value=char in default_chars['exclude_chars'], key=f"{column}_{char}") for char in special_characters}
+                max_length = st.number_input('設定最大字元長度', value=default_chars['max_length'], min_value=1, max_value=1024, key=f"max_length_{column}")
+                disable_chinese = st.checkbox('禁用中文字符', value=default_chars['disable_chinese'], key=f"disable_chinese_{column}")
+
+                column_char_exclude[column] = {
+                    'exclude_chars': [char for char, checked in char_checks.items() if checked],
+                    'max_length': max_length,
+                    'disable_chinese': disable_chinese
+                }
 
         config_name = st.text_input('配置名稱', value=selected_config_name if selected_config_name != '創建新配置' else '')
         if st.button('保存配置'):
@@ -68,13 +88,18 @@ if uploaded_file is not None:
             st.success('配置已保存！')
 
         st.write("### 驗證結果")
-        for column, chars_to_exclude in column_char_exclude.items():
-            if chars_to_exclude:
-                data[f'IsValid_{column}'] = data[column].apply(lambda x: all(char not in str(x) for char in chars_to_exclude))
-                valid_count = data[f'IsValid_{column}'].sum()
-                total_count = len(data)
+        for column, settings in column_char_exclude.items():
+            chars_to_exclude = settings['exclude_chars']
+            max_length = settings['max_length']
+            disable_chinese = settings['disable_chinese']
 
-                st.write(f"處理欄位：{column}")
-                st.write(f"排除字符：{', '.join(chars_to_exclude)}")
-                st.write(f"總行數：{total_count}, 符合條件的行數：{valid_count}")
-                st.dataframe(data[~data[f'IsValid_{column}']])
+            data[f'IsValid_{column}'] = data[column].apply(lambda x: all(char not in str(x) for char in chars_to_exclude) and len(str(x)) <= max_length and (not disable_chinese or not re.search('[\u4e00-\u9fff]', str(x))))
+            valid_count = data[f'IsValid_{column}'].sum()
+            total_count = len(data)
+
+            st.write(f"處理欄位：{column}")
+            st.write(f"排除字符：{', '.join(chars_to_exclude)}")
+            st.write(f"最大字元長度：{max_length}")
+            st.write(f"禁用中文字符：{'是' if disable_chinese else '否'}")
+            st.write(f"總行數：{total_count}, 符合條件的行數：{valid_count}")
+            st.dataframe(data[~data[f'IsValid_{column}']])
